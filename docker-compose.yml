@@ -1,0 +1,131 @@
+x-superset-common: &superset-common
+  build:
+    context: .
+    dockerfile: Dockerfile.superset
+  image: khaidt-superset:latest
+  network_mode: host 
+  environment: &superset-env
+    SUPERSET_SECRET_KEY: 'your-secret-key-here-change-in-production-123456789'
+    SUPERSET_CONFIG_PATH: /app/pythonpath/superset_config.py
+    PYTHONPATH: /app/pythonpath:/app/pythonpath_docker
+
+    DATABASE_HOST: localhost
+    DATABASE_PORT: 5432
+    DATABASE_USER: superset
+    DATABASE_PASSWORD: superset
+    DATABASE_DB: superset
+    SQLALCHEMY_DATABASE_URI: postgresql+psycopg2://superset:superset@localhost:5432/superset
+
+    REDIS_HOST: localhost
+    REDIS_PORT: 6379
+    CELERY_BROKER_URL: redis://localhost:6379/1
+    CELERY_RESULT_BACKEND: redis://localhost:6379/1
+
+    ADMIN_USERNAME: khai.dt
+    ADMIN_FIRSTNAME: Khai
+    ADMIN_LASTNAME: DT
+    ADMIN_EMAIL: khai.dt@example.com
+    ADMIN_PASSWORD: '@Insmart1234'
+
+  volumes:
+    - ./superset_config.py:/app/pythonpath/superset_config.py:ro
+
+
+services:
+  postgres:
+    image: postgres:16
+    network_mode: host  
+    environment:
+      POSTGRES_USER: superset
+      POSTGRES_PASSWORD: superset
+      POSTGRES_DB: superset
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U superset"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7
+    network_mode: host  
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  superset-init:
+    <<: *superset-common
+    container_name: superset_init
+    command: >
+      bash -c "
+        echo 'Waiting for postgres...' &&
+        sleep 15 &&
+        until /app/.venv/bin/python -c 'import socket; s=socket.socket(); s.connect((\"localhost\", 5432)); s.close()' 2>/dev/null; do sleep 2; done &&
+        echo 'Postgres is ready!' &&
+        echo 'Waiting for redis...' &&
+        sleep 5 &&
+        echo 'Running database upgrade...' &&
+        superset db upgrade &&
+        echo 'Creating admin user...' &&
+        superset fab create-admin --username khai.dt --firstname Khai --lastname DT --email khai.dt@example.com --password '@Insmart1234' &&
+        echo 'Initializing Superset...' &&
+        superset init &&
+        echo 'Superset initialized successfully with admin: khai.dt'
+      "
+    restart: "no"
+
+  superset:
+    <<: *superset-common
+    command: >
+      bash -c "
+        echo 'Waiting for postgres...' &&
+        sleep 10 &&
+        until /app/.venv/bin/python -c 'import socket; s=socket.socket(); s.connect((\"localhost\", 5432)); s.close()' 2>/dev/null; do sleep 2; done &&
+        echo 'Postgres is ready!' &&
+        echo 'Running database upgrade...' &&
+        superset db upgrade &&
+        echo 'Starting Superset server...' &&
+        gunicorn --bind 0.0.0.0:8088 --workers 4 --timeout 120 'superset.app:create_app()'
+      "
+    restart: unless-stopped
+
+  superset-worker:
+    <<: *superset-common
+    command: >
+      bash -c "
+        sleep 20 &&
+        celery --app=superset.tasks.celery_app:app worker --pool=prefork --concurrency=4
+      "
+    restart: unless-stopped
+
+  superset-beat:
+    <<: *superset-common
+    command: >
+      bash -c "
+        sleep 20 &&
+        celery --app=superset.tasks.celery_app:app beat --schedule=/tmp/celerybeat-schedule
+      "
+    restart: unless-stopped
+
+  superset-mcp:
+    <<: *superset-common
+    container_name: superset_mcp
+    volumes:
+      - ./mcp_server.py:/app/pythonpath/mcp_server.py:ro
+    environment:
+      <<: *superset-env
+    command: >
+      bash -c "
+        sleep 10 &&
+        python /app/pythonpath/mcp_server.py
+      "
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:

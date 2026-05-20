@@ -1,0 +1,17 @@
+FROM apache/superset:latest
+
+USER root
+
+RUN /app/.venv/bin/python -m ensurepip && \
+    /app/.venv/bin/python -m pip install --no-cache-dir psycopg2-binary
+
+RUN /app/.venv/bin/python -m pip install --no-cache-dir \
+    pymysql \
+    cryptography \
+    mysql-connector-python \
+    mcp \
+    fastmcp \
+    httpx \
+    superset-mcp
+
+USER superset
