@@ -1,0 +1,8 @@
+Lệnh tắt superset UI : 
+ssh -p 234 hieu.pv@49.213.89.197 "cd ~/superset_ui && DOCKER_HOST=unix:///var/run/docker.sock docker compose down"
+
+
+lệnh bật superset UI : 
+ssh -p 234 hieu.pv@49.213.89.197 "cd ~/superset_ui && DOCKER_HOST=unix:///var/run/docker.sock docker compose up -d"
+
+tạo acc : ssh -p 234 hieu.pv@49.213.89.197 "DOCKER_HOST=unix:///var/run/docker.sock docker exec superset_ui-superset-1 superset fab create-admin --username hieu.pv --firstname Hieu --lastname Phan --email hieu.pv@example.com --password 37quechoa"
